@@ -148,7 +148,7 @@ jobs:
           docker rm ${{ github.event.repository.name }} || true
 
           docker pull ${{ env.IMAGE_VERSION }}
-          docker run --name ${{ github.event.repository.name }} --env-file .env  -dp ${{ secrets.BE_PORT }} ${{ env.IMAGE_VERSION }}
+          docker run --name ${{ github.event.repository.name }} -e "ConnectionStrings__UserAppCon=${{ secrets.DB_CONNECTION_STRING }}" -dp ${{ secrets.BE_PORT }} ${{ env.IMAGE_VERSION }}
           
           docker image prune -f
 
