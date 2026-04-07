@@ -223,11 +223,6 @@ jobs:
     name: Check Application Logs
     runs-on: self-hosted
     needs: deploy
-    
-  check-logs:
-    name: Check Application Logs
-    runs-on: self-hosted
-    needs: deploy
 
     steps:
     - name: Check Application Logs
