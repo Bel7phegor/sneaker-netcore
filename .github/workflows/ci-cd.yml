@@ -133,7 +133,7 @@ jobs:
     steps:
     - name: Deploy on AWS with CloudWatch Logs
       run: |
-        sudo su ${{ secrets.USER_PROJECT }}p '
+        sudo su ${{ secrets.USER_PROJECT }} '
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
  
           docker stop ${{ github.event.repository.name }} || true
