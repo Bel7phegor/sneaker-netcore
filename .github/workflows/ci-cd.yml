@@ -141,6 +141,7 @@ jobs:
           docker pull ${{ env.IMAGE_VERSION }}
           docker run --name ${{ github.event.repository.name }} \
           -e "ConnectionStrings__UserAppCon=${{ secrets.DB_CONNECTION_STRING }}" \
+          --restart unless-stopped \
           -dp ${{ secrets.BE_PORT }} \
           --log-driver=awslogs \
           --log-opt awslogs-region=${{ env.AWS_REGION }} \
