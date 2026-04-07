@@ -6,8 +6,8 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-  IMAGE_VERSION: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ github.ref_name }}_${{ github.sha }}
+  AWS_REGION: "ap-southeast-1"
+  IMAGE_VERSION: ${{ secrets.ECR_REGISTRY }}/${{ github.event.repository.name }}:${{ github.ref_name }}_${{ github.sha }}
   SNYKSCAN_REPORT: "snyk_scan_${{ github.event.repository.name }}_${{ github.ref_name }}_${{ github.sha }}_report"
   TRIVYFS_REPORT: "trivy_fs_scan_${{ github.event.repository.name }}_${{ github.ref_name }}_${{ github.sha }}_report"
   TRIVY_IMAGE_REPORT: "security_scan_image_${{ github.event.repository.name }}_${{ github.ref_name }}_${{ github.sha }}_report"
@@ -17,20 +17,18 @@ env:
 jobs:
   build:
     name: Build and Push Docker Image
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     environment: production 
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Login to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_PASSWD }}
+    - name: Login to Amazone ECR
+      run: |
+        aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
 
-    - name: Build Docker image
+    - name: Build and Push Docker image on ECR
       run: |
         docker build --network=host -t ${{ env.IMAGE_VERSION }} .
         docker images | grep ${{ github.event.repository.name }}
@@ -38,7 +36,7 @@ jobs:
 
   # snyk-scan:
   #   name: Snyk Source Code Scan
-  #   runs-on: ubuntu-latest
+  #   runs-on: self-hosted
   #   needs: build
   #   environment: production
     
@@ -70,7 +68,7 @@ jobs:
 
   trivy-fs-scan:
     name: Trivy Source Code Scan
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: build
     
     steps:
@@ -97,7 +95,7 @@ jobs:
 
   trivy-image-scan:
     name: Trivy Image Security Scan
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [build, trivy-fs-scan]
     
     steps:
@@ -128,35 +126,34 @@ jobs:
 
   deploy:
     name: Deploy Application
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [build, trivy-fs-scan, trivy-image-scan]
     environment: production  
     
     steps:
-    - name: SSH and Deploy on AWS
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.SERVER_HOST }}
-        username: ${{ secrets.SERVER_USERNAME }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        script: |
-          sudo su - shoe-shop << 'EOF'
-          
-          echo "${{ secrets.DOCKERHUB_PASSWD }}" | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
-          
+    - name: Deploy on AWS with CloudWatch Logs
+      run: |
+        sudo su ${{ secrets.USER_PROJECT }}p '
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+ 
           docker stop ${{ github.event.repository.name }} || true
           docker rm ${{ github.event.repository.name }} || true
-
           docker pull ${{ env.IMAGE_VERSION }}
-          docker run --name ${{ github.event.repository.name }} -e "ConnectionStrings__UserAppCon=${{ secrets.DB_CONNECTION_STRING }}" -dp ${{ secrets.BE_PORT }} ${{ env.IMAGE_VERSION }}
-          
-          docker image prune -f
+          docker run --name ${{ github.event.repository.name }} \
+          -e "ConnectionStrings__UserAppCon=${{ secrets.DB_CONNECTION_STRING }}" \
+          -dp ${{ secrets.BE_PORT }} \
+          --log-driver=awslogs \
+          --log-opt awslogs-region=${{ env.AWS_REGION }} \
+          --log-opt awslogs-group=/ec2/${{ github.event.repository.name }} \
+          --log-opt awslogs-create-group=true \
+          ${{ env.IMAGE_VERSION }} 
 
-          EOF
+          docker image prune -f
+        '
 
   arachni-website-scan:
     name: Arachni Website Security Scan
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: deploy
     environment: production 
     
@@ -194,7 +191,7 @@ jobs:
 
   zap-website-scan:
     name: ZAP Website Security Scan
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: deploy
     environment: production 
     
@@ -224,17 +221,15 @@ jobs:
 
   check-logs:
     name: Check Application Logs
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: deploy
     
+  check-logs:
+    name: Check Application Logs
+    runs-on: self-hosted
+    needs: deploy
+
     steps:
-    - name: SSH and Check container logs
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.SERVER_HOST }}
-        username: ${{ secrets.SERVER_USERNAME }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        script: |
-          sudo su - shoe-shop << 'EOF'
-          docker logs ${{ github.event.repository.name }} --tail 50
-          EOF
+    - name: Check Application Logs
+      run: |
+        docker logs ${{ github.event.repository.name }} --tail 50
