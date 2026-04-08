@@ -149,26 +149,26 @@ jobs:
           --auto-scaling-group-name ${{ env.ASG_NAME }} \
           --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 60}'
 
-    - name: Deploy on AWS with CloudWatch Logs
-      run: |
-        sudo su ${{ secrets.USER_PROJECT }} -c '
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+    # - name: Deploy on AWS with CloudWatch Logs
+    #   run: |
+    #     sudo su ${{ secrets.USER_PROJECT }} -c '
+    #       aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
  
-          docker stop ${{ github.event.repository.name }} || true
-          docker rm ${{ github.event.repository.name }} || true
-          docker pull ${{ env.IMAGE_VERSION }}
-          docker run --name ${{ github.event.repository.name }} \
-          -e "ConnectionStrings__UserAppCon=${{ secrets.DB_CONNECTION_STRING }}" \
-          --restart unless-stopped \
-          -dp ${{ secrets.BE_PORT }} \
-          --log-driver=awslogs \
-          --log-opt awslogs-region=${{ env.AWS_REGION }} \
-          --log-opt awslogs-group=/ec2/${{ github.event.repository.name }} \
-          --log-opt awslogs-create-group=true \
-          ${{ env.IMAGE_VERSION }} 
+    #       docker stop ${{ github.event.repository.name }} || true
+    #       docker rm ${{ github.event.repository.name }} || true
+    #       docker pull ${{ env.IMAGE_VERSION }}
+    #       docker run --name ${{ github.event.repository.name }} \
+    #       -e "ConnectionStrings__UserAppCon=${{ secrets.DB_CONNECTION_STRING }}" \
+    #       --restart unless-stopped \
+    #       -dp ${{ secrets.BE_PORT }} \
+    #       --log-driver=awslogs \
+    #       --log-opt awslogs-region=${{ env.AWS_REGION }} \
+    #       --log-opt awslogs-group=/ec2/${{ github.event.repository.name }} \
+    #       --log-opt awslogs-create-group=true \
+    #       ${{ env.IMAGE_VERSION }} 
 
-          docker image prune -f
-        '
+    #       docker image prune -f
+    #     '
   # arachni-website-scan:
   #   name: Arachni Website Security Scan
   #   runs-on: ubuntu-latest
