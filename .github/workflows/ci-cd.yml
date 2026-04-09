@@ -100,7 +100,7 @@ jobs:
     name: Trivy Image Security Scan
     runs-on: ubuntu-latest
     needs: [build, trivy-fs-scan]
-    environment: production
+    environment: AWS_SECRET
 
     steps:
     - name: Checkout code
