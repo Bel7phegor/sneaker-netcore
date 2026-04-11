@@ -35,9 +35,9 @@ Hệ thống được thiết kế theo chuẩn Production trên AWS, tách bi�
 * **Load Balancing & Routing:** Sử dụng **Application Load Balancer (ALB)** kết hợp với **Route 53**. ALB đóng vai trò là điểm vào duy nhất (Single Point of Entry), thực hiện Path-based routing: chuyển tiếp traffic mặc định vào Frontend và các request có tiền tố `/api/*` vào Backend.
 
 
-  <p align="center">
-    <img src="Images/System-Architecture.png" alt="Kiến trúc hệ thống" width="650">
-  </p>
+<p align="center">
+  <img src="Images/System-Architecture.png" alt="Kiến trúc hệ thống" width="650">
+</p>
 
 ## 2. Thiết lập Mạng & Bảo mật (Network & Security)
 
@@ -145,15 +145,18 @@ Dưới đây là các minh chứng kỹ thuật trích xuất từ quá trình 
 
 <p align="center">
   <img src="Images/Website Interface with SSL.png" alt="CI/CD Pipeline Status" width="650">
-  Giao diện website với SSL
+  <p align="center" >Giao diện website với SSL</p>
 </p>
 
 
 **Mô tả kỹ thuật:** Ứng dụng được phân phối an toàn qua AWS Application Load Balancer. Tên miền `sneaker.anphuc.site` được cấp phát chứng chỉ SSL/TLS thông qua AWS ACM, đảm bảo mã hóa dữ liệu truyền tải và áp dụng quy tắc ép buộc chuyển hướng (Force Redirect) toàn bộ traffic từ Port 80 (HTTP) sang Port 443 (HTTPS).
-<p align="center">
-  <img src="Images/Loadbalancing map.png" alt="Loadbalancers map" width="650">
-  Luồng cân bằng tải trên hệ thống
-</p>
+
+<figure style="text-align: center; margin: 10px 0;">
+  <img src="Images/Loadbalancing map.png" alt="Loadbalancers map" width="650" style="display: block; margin: 0 auto;">
+  <figcaption style="margin-top: 5px; font-size: 0.9em; color: #ffffff;">
+    Luồng cân bằng tải trên hệ thống
+  </figcaption>
+</figure>
 
 ### 7.3. Quản lý và Lưu trữ Container Image (ECR & Harbor)
 <p align="center">
