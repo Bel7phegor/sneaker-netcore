@@ -34,7 +34,6 @@ Hệ thống được thiết kế theo chuẩn Production trên AWS, tách bi�
 * **Database (Lưu trữ dữ liệu):** Sử dụng **Amazon RDS** làm máy chủ cơ sở dữ liệu độc lập, tách biệt hoàn toàn khỏi tầng Compute để đảm bảo an toàn dữ liệu khi có sự cố ở cấp độ Server.
 * **Load Balancing & Routing:** Sử dụng **Application Load Balancer (ALB)** kết hợp với **Route 53**. ALB đóng vai trò là điểm vào duy nhất (Single Point of Entry), thực hiện Path-based routing: chuyển tiếp traffic mặc định vào Frontend và các request có tiền tố `/api/*` vào Backend.
 
-
 <p align="center">
   <img src="Images/System-Architecture.png" alt="Kiến trúc hệ thống" width="650">
 </p>
@@ -69,10 +68,11 @@ Hệ thống sử dụng GitHub Secrets để không lộ thông tin nhạy cả
 
 Pipeline được định nghĩa bằng GitHub Actions, chia làm nhiều Job chạy tuần tự và song song, tích hợp kiểm thử bảo mật ở mọi giai đoạn (Shift-Left Security).
 
-<p align="center">
-  <img src="Images/DevSevOps-Flow.png" alt="Kiến trúc hệ thống" width="650"> 
-  Mô hình hóa quy trình DevSecOps
-</p>
+<div align="center">
+  <img src="Images/DevSevOps-Flow.png" width="650">
+  <br>
+  Mô hình hóa quy trình DevSecOps
+</div>
 
 ### Giai đoạn 1: Continuous Integration (CI)
 * **Build & Push:** Checkout mã nguồn, xác thực IAM Role với AWS, build Docker Image từ Dockerfile và push lên Amazon ECR.
@@ -98,9 +98,10 @@ Sau khi ứng dụng đã live trên môi trường Production, hệ thống t�
 * **Container Logs:** Tích hợp AWS CloudWatch Logs thông qua Docker Logging Driver. Toàn bộ standard output/error từ các container được đẩy tập trung về Log Group `/ec2/${REPO_NAME}`, giúp việc debug và truy vết lỗi dễ dàng mà không cần SSH trực tiếp vào server.
 * **Health Checks:** sALB thực hiện kiểm tra sức khỏe (Health Check) liên tục vào các Target Group. Nếu một EC2 instance không phản hồi chuẩn xác, ALB sẽ tự động ngắt traffic đến instance đó và ASG sẽ tiến hành khởi tạo instance mới để thay thế.
 
-<p align="center">
-  <img src="Images/CloudWatch-checklog.png" alt="Kiến trúc hệ thống" width="650">
-</p>
+<div align="center">
+  <img src="Images/CloudWatch-checklog.png" width="650">
+  <br>
+</div>
 
 ## 6. Công nghệ sử dụng (Tech Stack)
 
@@ -129,45 +130,55 @@ Dưới đây là các minh chứng kỹ thuật trích xuất từ quá trình 
 
 Đẩy lên trên: **[DockerHub: anphuc2370](https://hub.docker.com/r/anphuc2370/online-shop-frontend)**
 ### 7.1. Tự động hóa luồng CI/CD (Pipeline Execution)
-<p align="center">
-  <img src="Images/CI-CD Pipeline Status.png" alt="CI/CD Pipeline Status" width="650"> 
-  Triển khai pipeline CI/CD trên Github Action
-</p>
 
-<p align="center">
-  <img src="Images/image.png" alt="Alt text" width="740">
-    Triển khai pipeline CI/CD trên Gitlab CI
-</p>
+<div align="center">
+  <img src="Images/CI-CD Pipeline Status.png" width="650">
+  <br>
+  Triển khai pipeline CI/CD trên Github Action 
+</div>
+<p>
+<div align="center">
+  <img src="Images/image.png" width="650">
+  <br>
+  Triển khai pipeline CI/CD trên Gitlab CI
+</div>
+
+<p>
 
 **Mô tả kỹ thuật:** Luồng DevSecOps vận hành hoàn toàn tự động qua GitHub Actions. Các tiến trình từ đóng gói mã nguồn, quét bảo mật tĩnh (SAST), triển khai không gián đoạn (Zero-downtime Deployment) đến quét bảo mật động (DAST) đều được thực thi và xác thực thành công qua các Pipeline Jobs.
 
 ### 7.2. Cấu hình định tuyến và Bảo mật (Traffic Routing & HTTPS)
 
-<p align="center">
-  <img src="Images/Website Interface with SSL.png" alt="CI/CD Pipeline Status" width="650">
-  <p align="center" >Giao diện website với SSL</p>
-</p>
+<div align="center">
+  <img src="Images/Website Interface with SSL.png" width="650">
+  <br>
+  Giao diện website với SSL
+</div>
 
+<p>
 
 **Mô tả kỹ thuật:** Ứng dụng được phân phối an toàn qua AWS Application Load Balancer. Tên miền `sneaker.anphuc.site` được cấp phát chứng chỉ SSL/TLS thông qua AWS ACM, đảm bảo mã hóa dữ liệu truyền tải và áp dụng quy tắc ép buộc chuyển hướng (Force Redirect) toàn bộ traffic từ Port 80 (HTTP) sang Port 443 (HTTPS).
 
-<figure style="text-align: center; margin: 10px 0;">
-  <img src="Images/Loadbalancing map.png" alt="Loadbalancers map" width="650" style="display: block; margin: 0 auto;">
-  <figcaption style="margin-top: 5px; font-size: 0.9em; color: #ffffff;">
-    Luồng cân bằng tải trên hệ thống
-  </figcaption>
-</figure>
+<div align="center">
+  <img src="Images/Loadbalancing map.png" width="650">
+  <br>
+  Luồng cân bằng tải trên hệ thống
+</div>
 
 ### 7.3. Quản lý và Lưu trữ Container Image (ECR & Harbor)
-<p align="center">
-  <img src="Images/ECR-private-registry.png" alt="CI/CD Pipeline Status" width="650">
-  Lưu trữ image với AWS ECR
-</p>
 
-<p align="center">
-  <img src="Images/Harbor-private-registry.png" alt="CI/CD Pipeline Status" width="650">
-  Lưu trữ image với Harbor registry
-</p>
+<div align="center">
+  <img src="Images/ECR-private-registry.png" width="650">
+  <br>
+  Lưu trữ image với AWS ECR
+</div>
+<p>
+<div align="center">
+  <img src="Images/Harbor-private-registry.png" width="650">
+  <br>
+  Lưu trữ image với Harbor registry
+</div>
+<p>
 
 **Mô tả kỹ thuật:** Hệ thống áp dụng chiến lược lưu trữ Container Image đa kho (Multi-registry Strategy) nhằm tối ưu hóa luồng CI/CD, tăng cường bảo mật và kiểm soát vòng đời của Image
 
