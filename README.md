@@ -200,12 +200,6 @@ Tất cả báo cáo được tạo ra trong quá trình chạy pipeline v
 
 ## 8. Thông tin liên hệ (Contact Information)
 
-**Nguyễn An Phúc**
-| Intern DevOps Engineer / Network Engineer |
-
-* **Email:** [nguyenanphuc12032002@gmail.com](mailto:phucan2370@gmail.com)
-* **LinkedIn:** [LinkedIn](https://www.linkedin.com/in/nguyen-an-phuc/)
-* **GitHub:** [Bel7phegor](https://github.com/Bel7phegor)
-* **Portfolio:** [anphuc.site](https://anphuc.site)
-
-*Objective: Eager to design, deploy, and maintain secure, highly available, and fully automated cloud architectures.*
+**Author:** Nguyễn An Phúc (@Bel7phegor)
+* **Profiles:** [LinkedIn: nguyen-an-phuc](https://www.linkedin.com/in/nguyen-an-phuc) | [GitHub: Bel7phegor](https://github.com/Bel7phegor) | [Portfolio: anphuc.site](https://anphuc.site)
+* **Email:** [nguyenanphuc12032002@gmail.com](mailto:nguyenanphuc12032002@gmail.com)

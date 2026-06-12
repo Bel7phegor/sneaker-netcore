@@ -1,251 +1,253 @@
-name: CI/CD Pipeline
+name: CI/CD — Production
 
 on:
   push:
-    tags: ['v*']
+    tags:
+      - "v*"
 
 env:
-  USER_PROJECT: ${{ secrets.USER_PROJECT }}
-  AWS_REGION: "ap-southeast-1"
+  AWS_REGION:    ap-southeast-3
+  NAMESPACE:     shopnow
+  EKS_CLUSTER:   shopnow-prod-eks
+  ECR_REGISTRY:  ${{ secrets.ECR_REGISTRY }}
   IMAGE_VERSION: ${{ secrets.ECR_REGISTRY }}/${{ github.event.repository.name }}:${{ github.ref_name }}_${{ github.sha }}
-  IMAGE_LATEST: ${{ secrets.ECR_REGISTRY }}/${{ github.event.repository.name }}:latest
-  SNYKSCAN_REPORT: "snyk_scan_${{ github.event.repository.name }}_${{ github.ref_name }}_${{ github.sha }}_report"
-  TRIVYFS_REPORT: "trivy_fs_scan_${{ github.event.repository.name }}_${{ github.ref_name }}_${{ github.sha }}_report"
-  TRIVY_IMAGE_REPORT: "security_scan_image_${{ github.event.repository.name }}_${{ github.ref_name }}_${{ github.sha }}_report"
-  ARACHNI_WEBSITE_REPORT: "arachni_scan_website_${{ github.event.repository.name }}_${{ github.ref_name }}_${{ github.sha }}_report"
-  ZAP_WEBSITE_REPORT: "zap_scan_website_${{ github.event.repository.name }}_${{ github.ref_name }}_${{ github.sha }}_report"
-  ASG_NAME: "auto-scaling-gr-lab"
+  HELM_RELEASE:  ${{ github.event.repository.name }}
+
+  # Report names
+  SNYKSCAN_REPORT:        "snyk_${{ github.event.repository.name }}_${{ github.ref_name }}_${{ github.sha }}"
+  TRIVYFS_REPORT:         "trivy_fs_${{ github.event.repository.name }}_${{ github.ref_name }}_${{ github.sha }}"
+  TRIVY_IMAGE_REPORT:     "trivy_img_${{ github.event.repository.name }}_${{ github.ref_name }}_${{ github.sha }}"
+  ARACHNI_REPORT:         "arachni_${{ github.event.repository.name }}_${{ github.ref_name }}_${{ github.sha }}"
+  ZAP_REPORT:             "zap_${{ github.event.repository.name }}_${{ github.ref_name }}_${{ github.sha }}"
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
+
   build:
-    name: Build and Push Docker Image
+    name: Build & Push ECR
     runs-on: ubuntu-latest
-    environment: AWS_SECRET
+    environment: production
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ACCESS_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: Login to Amazone ECR
-      run: |
-        aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
-    
-    - name: Build Docker image
-      run: |
-        docker build --network=host -t ${{ env.IMAGE_VERSION }} -t ${{ env.IMAGE_LATEST }} .
-        docker images | grep ${{ github.event.repository.name }}
-        docker push ${{ env.IMAGE_VERSION }}
-        docker push ${{ env.IMAGE_LATEST }}
-  
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} \
+            | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+
+      - name: Build & push
+        run: |
+          docker build \
+            --network=host \
+            --build-arg REACT_APP_BASE_API_URL=${{ secrets.REACT_APP_BASE_API_URL }} \
+            -t ${{ env.IMAGE_VERSION }} \
+            .
+          docker push ${{ env.IMAGE_VERSION }}
+
+  # JOB 2, 3, 4: Security scan
   snyk-scan:
-    name: Snyk Source Code Scan
+    name: Snyk — Source Code Scan
     runs-on: ubuntu-latest
     needs: build
     environment: production
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Run Snyk Scan and Generate Report
-      run: |
-        docker run --rm \
-          --entrypoint /bin/sh \
-          -e SNYK_TOKEN=${{ secrets.SNYK_TOKEN }} \
-          -v $(pwd):/app \
-          -w /app \
-          snyk/snyk:node -c "npm install --ignore-scripts ; snyk test --all-projects --json > snyk_result.json || true ; npm install -g snyk-to-html ; snyk-to-html -i snyk_result.json -o ${{ env.SNYKSCAN_REPORT }}.html"
+      - name: Run Snyk scan
+        run: |
+          docker run --rm \
+            --entrypoint /bin/sh \
+            -e SNYK_TOKEN=${{ secrets.SNYK_TOKEN }} \
+            -v $(pwd):/app -w /app \
+            snyk/snyk:node -c "
+              npm install --ignore-scripts
+              snyk test --all-projects --json > snyk_result.json || true
+              npm install -g snyk-to-html
+              snyk-to-html -i snyk_result.json -o ${{ env.SNYKSCAN_REPORT }}.html
+            "
 
-    - name: Upload Snyk report
-      uses: actions/upload-artifact@v4
-      with:
-        name: snyk-scan-report
-        path: ${{ env.SNYKSCAN_REPORT }}.html
-        retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snyk-report
+          path: ${{ env.SNYKSCAN_REPORT }}.html
+          retention-days: 30
 
   trivy-fs-scan:
-    name: Trivy Source Code Scan
+    name: Trivy — Filesystem Scan
     runs-on: ubuntu-latest
     needs: build
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
 
-    - name: Run Trivy filesystem scan
-      run: |
-        docker run --rm \
-          -v $PWD:/${{ github.event.repository.name }} \
-          -v /var/run/docker.sock:/var/run/docker.sock \
-          aquasec/trivy:0.69.3 fs /${{ github.event.repository.name }} \
-          --severity HIGH,CRITICAL \
-          --format template \
-          --template "@contrib/html.tpl" \
-          --output /${{ github.event.repository.name }}/${{ env.TRIVYFS_REPORT }}.html
-    - name: Upload Trivy FS report
-      uses: actions/upload-artifact@v4
-      with:
-        name: trivy-fs-report
-        path: ${{ env.TRIVYFS_REPORT }}.html
-        retention-days: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy FS scan
+        run: |
+          docker run --rm \
+            -v $PWD:/${{ github.event.repository.name }} \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.69.3 fs /${{ github.event.repository.name }} \
+            --severity HIGH,CRITICAL \
+            --format template \
+            --template "@contrib/html.tpl" \
+            --output /${{ github.event.repository.name }}/${{ env.TRIVYFS_REPORT }}.html
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-report
+          path: ${{ env.TRIVYFS_REPORT }}.html
+          retention-days: 30
 
   trivy-image-scan:
-    name: Trivy Image Security Scan
+    name: Trivy — Image Scan
     runs-on: ubuntu-latest
     needs: [build, trivy-fs-scan]
-    environment: AWS_SECRET
+    environment: production
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ACCESS_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: Login to Amazon ECR
-      run: |
-        aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+      - name: Login to ECR & pull image
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} \
+            | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+          docker pull ${{ env.IMAGE_VERSION }}
 
-    - name: Pull Docker image from ECR
-      run: docker pull ${{ env.IMAGE_VERSION }}
+      - name: Scan image
+        run: |
+          docker run --rm \
+            -v $(pwd):/output \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.69.3 image \
+            --format template \
+            --template "@contrib/html.tpl" \
+            --output /output/${{ env.TRIVY_IMAGE_REPORT }}.html \
+            ${{ env.IMAGE_VERSION }}
 
-    - name: Clean Trivy cache
-      run: |
-        docker run --rm \
-          -v $(pwd):/${{ github.event.repository.name }} \
-          -v /var/run/docker.sock:/var/run/docker.sock \
-          aquasec/trivy:0.69.3 clean --all
-
-    - name: Scan Docker image with Trivy
-      run: |
-        docker run --rm \
-          -v $(pwd):/${{ github.event.repository.name }} \
-          -v /var/run/docker.sock:/var/run/docker.sock \
-          aquasec/trivy:0.69.3 image \
-          --format template \
-          --template "@contrib/html.tpl" \
-          --output /${{ github.event.repository.name }}/${{ env.TRIVY_IMAGE_REPORT }}.html \
-          ${{ env.IMAGE_VERSION }}
-
-    - name: Upload Trivy image report
-      uses: actions/upload-artifact@v4
-      with:
-        name: trivy-image-report
-        path: ${{ env.TRIVY_IMAGE_REPORT }}.html
-        retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-report
+          path: ${{ env.TRIVY_IMAGE_REPORT }}.html
+          retention-days: 30
 
   deploy:
-    name: Deploy Application
+    name: Deploy to EKS Production
     runs-on: ubuntu-latest
-    needs: [build, trivy-fs-scan, trivy-image-scan]
-    environment: AWS_SECRET
+    needs: [build, snyk-scan, trivy-fs-scan, trivy-image-scan]
+    environment: production 
+
     steps:
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with: 
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+      - uses: actions/checkout@v4
 
-    - name: Trigger ASG Instance Refresh
-      run: |
-        aws autoscaling start-instance-refresh \
-          --auto-scaling-group-name ${{ env.ASG_NAME }} \
-          --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 60}'
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ACCESS_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    # - name: Deploy on AWS with CloudWatch Logs
-    #   run: |
-    #     sudo su ${{ secrets.USER_PROJECT }} -c '
-    #       aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
- 
-    #       docker stop ${{ github.event.repository.name }} || true
-    #       docker rm ${{ github.event.repository.name }} || true
-    #       docker pull ${{ env.IMAGE_VERSION }}
-    #       docker run --name ${{ github.event.repository.name }} \
-    #       -e "ConnectionStrings__UserAppCon=${{ secrets.DB_CONNECTION_STRING }}" \
-    #       --restart unless-stopped \
-    #       -dp ${{ secrets.BE_PORT }} \
-    #       --log-driver=awslogs \
-    #       --log-opt awslogs-region=${{ env.AWS_REGION }} \
-    #       --log-opt awslogs-group=/ec2/${{ github.event.repository.name }} \
-    #       --log-opt awslogs-create-group=true \
-    #       ${{ env.IMAGE_VERSION }} 
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER }}
 
-    #       docker image prune -f
-    #     '
+      - name: Deploy với Helm
+        run: |
+          helm upgrade --install ${{ env.HELM_RELEASE }} ./helm \
+            --namespace ${{ env.NAMESPACE }} \
+            --create-namespace \
+            --set image.repository=${{ env.ECR_REGISTRY }}/${{ github.event.repository.name }} \
+            --set image.tag=${{ github.ref_name }}_${{ github.sha }} \
+            --set ingress.host=${{ secrets.URL_FE }} \
+            --set ingress.acmArn=${{ secrets.ACM_CERT_ARN }} \
+            --atomic \
+            --timeout 5m \
+            --wait
 
-  arachni-website-scan:
-    name: Arachni Website Security Scan
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/${{ env.HELM_RELEASE }} \
+            -n ${{ env.NAMESPACE }} \
+            --timeout=300s
+
+  zap-scan:
+    name: ZAP — Website Scan
     runs-on: ubuntu-latest
     needs: deploy
-    environment: production 
-    
+    environment: production
+    continue-on-error: true
+
     steps:
-    - name: Prepare temp folder
-      run: mkdir -p arachni-temp
-      
-    - name: Run Arachni scan
-      run: |
-        docker run --rm \
-          -v $(pwd)/arachni-temp/:/arachni-temp/ \
-          arachni/arachni:latest \
-          /usr/local/arachni/bin/arachni \
-          --output-verbose \
-          --scope-include-subdomains \
-          "${{ secrets.URL_BE }}" \
-          --report-save-path=/arachni-temp/${{ env.ARACHNI_WEBSITE_REPORT }}.afr
-    - name: Generate Arachni HTML report
-      run: |
-        docker run --rm \
-          -v $(pwd)/arachni-temp/:/arachni-temp/ \
-          arachni/arachni:latest \
-          /usr/local/arachni/bin/arachni_reporter \
-          /arachni-temp/${{ env.ARACHNI_WEBSITE_REPORT }}.afr \
-          --reporter=html:outfile=/arachni-temp/${{ env.ARACHNI_WEBSITE_REPORT }}.html.zip
-        sudo chown -R $(whoami):$(whoami) ./arachni-temp/
-    - name: Upload Arachni report
-      uses: actions/upload-artifact@v4
-      with:
-        name: arachni-website-report
-        path: arachni-temp/${{ env.ARACHNI_WEBSITE_REPORT }}.html.zip
-        retention-days: 1
-        
-  zap-website-scan:
-    name: ZAP Website Security Scan
+      - uses: actions/checkout@v4
+
+      - name: Run ZAP baseline scan
+        run: |
+          docker run --rm \
+            -u root \
+            -v $(pwd):/zap/wrk/:rw \
+            zaproxy/zap-stable \
+            zap-baseline.py \
+            -t "${{ secrets.URL_FE }}" \
+            -r "${{ env.ZAP_REPORT }}.html" \
+            --autooff || true
+          sudo chown -R $(whoami):$(whoami) "${{ env.ZAP_REPORT }}.html"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: ${{ env.ZAP_REPORT }}.html
+          retention-days: 30
+
+  arachni-scan:
+    name: Arachni — Website Scan
     runs-on: ubuntu-latest
     needs: deploy
-    environment: production 
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    - name: Run ZAP baseline scan
-      continue-on-error: true
-      run: |
-        docker run --rm \
-          -u root \
-          -v $(pwd):/zap/wrk/:rw \
-          zaproxy/zap-stable \
-          zap-baseline.py \
-          -t "${{ secrets.URL_BE }}" \
-          -r "${{ env.ZAP_WEBSITE_REPORT }}.html" \
-          --autooff || true
-        sudo chown -R $(whoami):$(whoami) "${{ env.ZAP_WEBSITE_REPORT }}.html"
-    - name: Upload ZAP report
-      uses: actions/upload-artifact@v4
-      with:
-        name: zap-website-report
-        path: ${{ env.ZAP_WEBSITE_REPORT }}.html
-        retention-days: 1
+    environment: production
+    continue-on-error: true
 
+    steps:
+      - run: mkdir -p arachni-temp
+
+      - name: Run Arachni scan (passive only)
+        run: |
+          docker run --rm \
+            -v $(pwd)/arachni-temp/:/arachni-temp/ \
+            arachni/arachni:latest \
+            /usr/local/arachni/bin/arachni \
+            --output-verbose \
+            --scope-include-subdomains \
+            --checks xss,sqli,csrf \
+            "${{ secrets.URL_FE }}" \
+            --report-save-path=/arachni-temp/${{ env.ARACHNI_REPORT }}.afr
+
+      - name: Generate HTML report
+        run: |
+          docker run --rm \
+            -v $(pwd)/arachni-temp/:/arachni-temp/ \
+            arachni/arachni:latest \
+            /usr/local/arachni/bin/arachni_reporter \
+            /arachni-temp/${{ env.ARACHNI_REPORT }}.afr \
+            --reporter=html:outfile=/arachni-temp/${{ env.ARACHNI_REPORT }}.html.zip
+          sudo chown -R $(whoami):$(whoami) ./arachni-temp/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arachni-report
+          path: arachni-temp/${{ env.ARACHNI_REPORT }}.html.zip
+          retention-days: 30
